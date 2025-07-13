@@ -30,29 +30,35 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
     y: playerPos.y,
   };
 
-  const isWalkable = (pos: Position, world: 'real' | 'mirror') => {
+  const isWalkable = useCallback((pos: Position, world: 'real' | 'mirror') => {
     if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) {
       return false;
     }
-    
-    // The tile from the canonical level definition
-    const realTile = level.tiles[pos.y][pos.x];
+
+    // The tile from the canonical level definition for the given position
+    const realTileForPos = level.tiles[pos.y][pos.x];
+
+    // The position in the *other* world's grid that corresponds to `pos`.
+    // This is needed to check for the opposite tile type (e.g. Pit vs Empty)
+    const correspondingMirrorPos = { x: width - 1 - pos.x, y: pos.y };
+    const correspondingRealTile = level.tiles[correspondingMirrorPos.y][correspondingMirrorPos.x];
+
 
     if (world === 'real') {
         // In the real world, Walls are obstacles. Pits are also obstacles.
-        return realTile !== TileType.Wall && realTile !== TileType.Pit;
+        // A tile is also unwalkable if the corresponding mirror tile is a pit.
+        return realTileForPos !== TileType.Wall && realTileForPos !== TileType.Pit && correspondingRealTile !== TileType.Pit;
     } else { // world === 'mirror'
-        // In the mirror world, Walls are obstacles, but Pits are not.
-        return realTile !== TileType.Wall;
+        // In the mirror world, Walls are obstacles. Pits in the *mirror* world are walkable.
+        // A tile is unwalkable if the corresponding *real* tile is a pit.
+        return realTileForPos !== TileType.Wall && realTileForPos !== TileType.Pit;
     }
-  };
+  }, [width, height, level.tiles]);
 
   const handleMove = useCallback((dx: number, dy: number, moveName: string) => {
     if (isComplete) return;
 
     const newPlayerPos = { x: playerPos.x + dx, y: playerPos.y + dy };
-    // The mirror player's position is derived from the *real* player's grid,
-    // but its movement is mirrored.
     const newMirrorPlayerPos = { x: mirrorPlayerPos.x - dx, y: mirrorPlayerPos.y + dy };
 
     if (isWalkable(newPlayerPos, 'real') && isWalkable(newMirrorPlayerPos, 'mirror')) {
@@ -67,10 +73,15 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
     }
   }, [playerPos, mirrorPlayerPos, isComplete, isWalkable, toast]);
 
+  const handleRestart = useCallback(() => {
+    setPlayerPos(level.playerStart);
+    setIsComplete(false);
+    setMoveHistory([]);
+    onRestart();
+  }, [level.playerStart, onRestart]);
 
   useEffect(() => {
     const goalReached = playerPos.x === level.goal.x && playerPos.y === level.goal.y;
-    // The mirror goal is horizontally flipped from the real goal
     const mirrorGoalPos = { x: width - 1 - level.goal.x, y: level.goal.y };
     const mirrorGoalReached = mirrorPlayerPos.x === mirrorGoalPos.x && mirrorPlayerPos.y === mirrorGoalPos.y;
 
@@ -114,13 +125,6 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleMove, handleRestart]);
 
-  const handleRestart = () => {
-    setPlayerPos(level.playerStart);
-    setIsComplete(false);
-    setMoveHistory([]);
-    onRestart();
-  };
-  
   const getLevelDescriptionForAI = () => {
     let desc = `Grid is ${width}x${height}. Player starts at (${level.playerStart.x}, ${level.playerStart.y}). Goal is at (${level.goal.x}, ${level.goal.y}).\n`;
     desc += "Real world layout:\n";
@@ -154,7 +158,17 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
           tileType = TileType.Goal;
         }
         
-        const finalType = world === 'mirror' && tileType === TileType.Pit ? TileType.Empty : tileType;
+        let finalType = tileType;
+        const mirrorX = width - 1 - x;
+        const correspondingTileInOtherWorld = level.tiles[y][mirrorX];
+        
+        if (world === 'mirror' && tileType === TileType.Empty && correspondingTileInOtherWorld === TileType.Pit) {
+           finalType = TileType.Empty; // This should be a walkable path in the mirror world
+        } else if (world === 'mirror' && tileType === TileType.Pit) {
+           finalType = TileType.Empty; // Pits in real grid are empty in mirror
+        } else if (world === 'real' && tileType === TileType.Empty && correspondingTileInOtherWorld === TileType.Pit) {
+           finalType = TileType.Pit; // This is a pit in the real world
+        }
 
         grid.push(<Tile key={`${world}-${x}-${y}`} type={finalType} world={world} />);
       }
