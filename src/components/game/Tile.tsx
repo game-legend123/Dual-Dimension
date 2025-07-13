@@ -41,9 +41,14 @@ export function Tile({ type, world }: TileProps) {
       content = <WallBlock />;
       break;
     case TileType.Pit:
-      // A pit in the real world is a wall in the mirror world, and vice-versa
-      content = world === 'real' ? <PitBlock /> : <WallBlock />;
+      content = <PitBlock />;
       break;
+    case TileType.Empty:
+        // In the mirror world, empty tiles are pits.
+        if (world === 'mirror') {
+            content = <PitBlock />
+        }
+        break;
     default:
       content = null;
   }

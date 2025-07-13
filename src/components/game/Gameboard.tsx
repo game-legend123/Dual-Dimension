@@ -34,18 +34,25 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
     if (pos.x < 0 || pos.x >= width || pos.y < 0 || pos.y >= height) {
       return false;
     }
-    const tile = level.tiles[pos.y][pos.x];
-    if (tile === TileType.Wall) return false;
-    if (tile === TileType.Pit) {
-      return world === 'mirror'; // Can walk on pits in mirror world (they are walls)
+    
+    // The tile from the canonical level definition
+    const realTile = level.tiles[pos.y][pos.x];
+
+    if (world === 'real') {
+        // In the real world, Walls are obstacles. Pits are also obstacles.
+        return realTile !== TileType.Wall && realTile !== TileType.Pit;
+    } else { // world === 'mirror'
+        // In the mirror world, Walls are obstacles, but Pits are not.
+        return realTile !== TileType.Wall;
     }
-    return true;
   };
 
   const handleMove = useCallback((dx: number, dy: number, moveName: string) => {
     if (isComplete) return;
 
     const newPlayerPos = { x: playerPos.x + dx, y: playerPos.y + dy };
+    // The mirror player's position is derived from the *real* player's grid,
+    // but its movement is mirrored.
     const newMirrorPlayerPos = { x: mirrorPlayerPos.x - dx, y: mirrorPlayerPos.y + dy };
 
     if (isWalkable(newPlayerPos, 'real') && isWalkable(newMirrorPlayerPos, 'mirror')) {
@@ -63,7 +70,9 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
 
   useEffect(() => {
     const goalReached = playerPos.x === level.goal.x && playerPos.y === level.goal.y;
-    const mirrorGoalReached = mirrorPlayerPos.x === width - 1 - level.goal.x && mirrorPlayerPos.y === level.goal.y;
+    // The mirror goal is horizontally flipped from the real goal
+    const mirrorGoalPos = { x: width - 1 - level.goal.x, y: level.goal.y };
+    const mirrorGoalReached = mirrorPlayerPos.x === mirrorGoalPos.x && mirrorPlayerPos.y === mirrorGoalPos.y;
 
     if (goalReached && mirrorGoalReached && !isComplete) {
       setIsComplete(true);
@@ -103,7 +112,7 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleMove]);
+  }, [handleMove, handleRestart]);
 
   const handleRestart = () => {
     setPlayerPos(level.playerStart);
@@ -145,7 +154,7 @@ export function Gameboard({ initialLevel, onLevelComplete, onRestart }: Gameboar
           tileType = TileType.Goal;
         }
         
-        const finalType = world === 'mirror' && tileType === TileType.Pit ? TileType.Wall : tileType;
+        const finalType = world === 'mirror' && tileType === TileType.Pit ? TileType.Empty : tileType;
 
         grid.push(<Tile key={`${world}-${x}-${y}`} type={finalType} world={world} />);
       }
